@@ -1,35 +1,70 @@
 #!/usr/bin/python3
-"""Defines the State class."""
-import models
-from os import getenv
-from models.base_model import Base
+"""Defines the FileStorage class."""
+import json
 from models.base_model import BaseModel
+from models.amenity import Amenity
 from models.city import City
-from sqlalchemy import Column
-from sqlalchemy import String
-from sqlalchemy.orm import relationship
+from models.place import Place
+from models.review import Review
+from models.state import State
+from models.user import User
 
 
-class State(BaseModel, Base):
-    """Represents a state for a MySQL database.
-
-    Inherits from SQLAlchemy Base and links to the MySQL table states.
+class FileStorage:
+    """Represent an abstracted storage engine.
 
     Attributes:
-        __tablename__ (str): The name of the MySQL table to store States.
-        name (sqlalchemy String): The name of the State.
-        cities (sqlalchemy relationship): The State-City relationship.
+        __file_path (str): The name of the file to save objects to.
+        __objects (dict): A dictionary of instantiated objects.
     """
-    __tablename__ = "states"
-    name = Column(String(128), nullable=False)
-    cities = relationship("City",  backref="state", cascade="delete")
 
-    if getenv("HBNB_TYPE_STORAGE") != "db":
-        @property
-        def cities(self):
-            """Get a list of all related City objects."""
-            city_list = []
-            for city in list(models.storage.all(City).values()):
-                if city.state_id == self.id:
-                    city_list.append(city)
-            return city_list
+    __file_path = "file.json"
+    __objects = {}
+
+    def all(self, cls=None):
+        """Return a dictionary of instantiated objects in __objects.
+
+        If a cls is specified, returns a dictionary of objects of that type.
+        Otherwise, returns the __objects dictionary.
+        """
+        if cls is not None:
+            if type(cls) == str:
+                cls = eval(cls)
+            cls_dict = {}
+            for k, v in self.__objects.items():
+                if type(v) == cls:
+                    cls_dict[k] = v
+            return cls_dict
+        return self.__objects
+
+    def new(self, obj):
+        """Set in __objects obj with key <obj_class_name>.id."""
+        self.__objects["{}.{}".format(type(obj).__name__, obj.id)] = obj
+
+    def save(self):
+        """Serialize __objects to the JSON file __file_path."""
+        odict = {o: self.__objects[o].to_dict() for o in self.__objects.keys()}
+        with open(self.__file_path, "w", encoding="utf-8") as f:
+            json.dump(odict, f)
+
+    def reload(self):
+        """Deserialize the JSON file __file_path to __objects, if it exists."""
+        try:
+            with open(self.__file_path, "r", encoding="utf-8") as f:
+                for o in json.load(f).values():
+                    name = o["__class__"]
+                    del o["__class__"]
+                    self.new(eval(name)(**o))
+        except FileNotFoundError:
+            pass
+
+    def delete(self, obj=None):
+        """Delete a given object from __objects, if it exists."""
+        try:
+            del self.__objects["{}.{}".format(type(obj).__name__, obj.id)]
+        except (AttributeError, KeyError):
+            pass
+
+    def close(self):
+        """Call the reload method."""
+        self.reload()
